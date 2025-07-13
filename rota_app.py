@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timedelta
 import os
 import bcrypt  # For password hashing
+import sqlite3  # For persistent storage
 
 # Custom CSS for branding
 css = """
@@ -49,7 +50,26 @@ css = """
 """
 st.markdown(css, unsafe_allow_html=True)
 
-pending_file = "pending.json"  # Relative path
+# SQLite setup for persistence (works locally and on Streamlit Cloud)
+conn = sqlite3.connect('rota.db', check_same_thread=False)
+c = conn.cursor()
+c.execute('''CREATE TABLE IF NOT EXISTS pending_employees
+             (full_name TEXT PRIMARY KEY, data TEXT)''')
+conn.commit()
+
+def save_pending(full_name, data):
+    c.execute("INSERT OR REPLACE INTO pending_employees (full_name, data) VALUES (?, ?)", (full_name, json.dumps(data)))
+    conn.commit()
+
+def load_pending():
+    pending = {}
+    for row in c.execute("SELECT * FROM pending_employees"):
+        pending[row[0]] = json.loads(row[1])
+    return pending
+
+def delete_pending(full_name):
+    c.execute("DELETE FROM pending_employees WHERE full_name = ?", (full_name,))
+    conn.commit()
 
 # Initialize session state
 if 'employees' not in st.session_state:
@@ -75,14 +95,7 @@ if 'employees' not in st.session_state:
             'role': 'admin'  # New: role field
         }
 if 'pending_employees' not in st.session_state:
-    st.session_state.pending_employees = {}  # {full_name: dict of employee data}
-    # Load pending from file if exists
-    if os.path.exists(pending_file):
-        try:
-            with open(pending_file, "r") as f:
-                st.session_state.pending_employees = json.load(f)
-        except Exception as e:
-            st.error(f"Error loading pending file: {e}")
+    st.session_state.pending_employees = load_pending()
 if 'schedule' not in st.session_state:
     st.session_state.schedule = {}  # {week_start: {day: {emp: {...}}}}
 if 'holidays' not in st.session_state:
@@ -120,14 +133,13 @@ if not st.session_state.logged_in and st.sidebar.button("Sign Up as New Employee
         submit = st.form_submit_button("Submit for Approval")
         
         if submit:
-            st.write("Debug: Form submitted")  # Debug
             if password != confirm_pw:
                 st.error("Passwords do not match.")
             else:
                 full_name = f"{first_name} {surname}".strip()
                 if full_name not in st.session_state.employees and full_name not in st.session_state.pending_employees:
                     hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-                    st.session_state.pending_employees[full_name] = {
+                    pending_data = {
                         'first_name': first_name,
                         'surname': surname,
                         'date_of_birth': dob.strftime("%d/%m/%Y"),
@@ -144,16 +156,10 @@ if not st.session_state.logged_in and st.sidebar.button("Sign Up as New Employee
                         'total_hours_worked': 0.0,
                         'role': 'employee'  # Default; admin can change to manager
                     }
-                    st.write("Debug: Added pending", full_name)  # Debug
-                    # Save pending to file immediately
-                    try:
-                        with open(pending_file, "w") as f:
-                            json.dump(st.session_state.pending_employees, f)
-                        st.write("Debug: File saved at", os.path.abspath(pending_file))  # Debug path
-                    except Exception as e:
-                        st.error(f"File save error: {e}")
+                    st.session_state.pending_employees[full_name] = pending_data
+                    save_pending(full_name, pending_data)
                     st.success("Your sign-up has been submitted for approval!")
-                    st.rerun()  # Force refresh to update state
+                    st.rerun()
                 else:
                     st.error("Name already exists.")
 
@@ -187,9 +193,7 @@ else:
 
 if page == "Approve Sign-Ups" and st.session_state.user_role == 'admin':
     st.title("Approve New Employees")
-    st.write("Debug: Pending count", len(st.session_state.pending_employees))  # Debug
-    st.write("Debug: Pending data", st.session_state.pending_employees)  # Debug
-    st.write("Debug: File exists", os.path.exists(pending_file))  # Debug
+    st.session_state.pending_employees = load_pending()  # Reload from DB
     if st.session_state.pending_employees:
         for full_name, data in list(st.session_state.pending_employees.items()):
             st.subheader(full_name)
@@ -207,13 +211,8 @@ if page == "Approve Sign-Ups" and st.session_state.user_role == 'admin':
                     data['role'] = role
                     data['holiday_entitlement_days'] = 28 if employment_type == 'full_time' else 0
                     st.session_state.employees[full_name] = data
-                    del st.session_state.pending_employees[full_name]
-                    # Save updated pending to file
-                    try:
-                        with open(pending_file, "w") as f:
-                            json.dump(st.session_state.pending_employees, f)
-                    except Exception as e:
-                        st.error(f"File save error: {e}")
+                    delete_pending(full_name)
+                    st.session_state.pending_employees = load_pending()  # Reload
                     # Initialize schedule for new employee
                     for week_key in st.session_state.schedule:
                         for day in st.session_state.days:
@@ -222,13 +221,8 @@ if page == "Approve Sign-Ups" and st.session_state.user_role == 'admin':
                     st.rerun()
             with col2:
                 if st.button("Reject", key=f"reject_{full_name}"):
-                    del st.session_state.pending_employees[full_name]
-                    # Save updated pending to file
-                    try:
-                        with open(pending_file, "w") as f:
-                            json.dump(st.session_state.pending_employees, f)
-                    except Exception as e:
-                        st.error(f"File save error: {e}")
+                    delete_pending(full_name)
+                    st.session_state.pending_employees = load_pending()  # Reload
                     st.success(f"{full_name} rejected.")
     else:
         st.info("No pending sign-ups.")
@@ -447,12 +441,9 @@ if st.session_state.user_role in ['admin', 'manager']:
                 "schedule": st.session_state.schedule,
                 "holidays": st.session_state.holidays
             }
-            try:
-                with open("rota_data.json", "w") as f:
-                    json.dump(data, f)
-                st.success("Saved!")
-            except Exception as e:
-                st.error(f"Save error: {e}")
+            with open("rota_data.json", "w") as f:
+                json.dump(data, f)
+            st.success("Saved!")
     with col2:
         if st.button("Load All"):
             if os.path.exists("rota_data.json"):
@@ -467,12 +458,9 @@ if st.session_state.user_role in ['admin', 'manager']:
                 st.error("No save file.")
             # Load pending if not in state
             if os.path.exists(pending_file):
-                try:
-                    with open(pending_file, "r") as f:
-                        st.session_state.pending_employees = json.load(f)
-                    st.write("Debug: Loaded pending from file in Load All", st.session_state.pending_employees)  # Debug
-                except Exception as e:
-                    st.error(f"Load pending error: {e}")
+                with open(pending_file, "r") as f:
+                    st.session_state.pending_employees = json.load(f)
+                st.write("Debug: Loaded pending from file in Load All", st.session_state.pending_employees)  # Debug
     with col3:
         if st.button("Finalize Week"):
             week_key = st.session_state.current_week_start
