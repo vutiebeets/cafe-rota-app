@@ -2,9 +2,8 @@ import streamlit as st
 import pandas as pd
 import json
 from datetime import datetime, timedelta
-import os
+import requests  # For Supabase API
 import bcrypt  # For password hashing
-import sqlite3  # For persistent storage
 
 # Custom CSS for branding
 css = """
@@ -50,26 +49,28 @@ css = """
 """
 st.markdown(css, unsafe_allow_html=True)
 
-# SQLite setup for persistence (works locally and on Streamlit Cloud)
-conn = sqlite3.connect('rota.db', check_same_thread=False)
-c = conn.cursor()
-c.execute('''CREATE TABLE IF NOT EXISTS pending_employees
-             (full_name TEXT PRIMARY KEY, data TEXT)''')
-conn.commit()
+SUPABASE_URL = "https://htnbizrnnryvsfummxfa.supabase.co"  # Updated with your URL
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0bmJpenJubnJ5dnNmdW1teGZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI0MDUyNDIsImV4cCI6MjA2Nzk4MTI0Mn0.pc3t1b5rblQtHBLHmDG29IgtfXjwBwXTc-wVPCPVDjo"  # Updated with your key
+headers = {
+    "apikey": SUPABASE_KEY,
+    "Authorization": f"Bearer {SUPABASE_KEY}",
+    "Content-Type": "application/json",
+    "Prefer": "return=minimal"
+}
 
 def save_pending(full_name, data):
-    c.execute("INSERT OR REPLACE INTO pending_employees (full_name, data) VALUES (?, ?)", (full_name, json.dumps(data)))
-    conn.commit()
+    requests.post(f"{SUPABASE_URL}/rest/v1/pending_employees", headers=headers, json={"full_name": full_name, "data": json.dumps(data)})
 
 def load_pending():
+    response = requests.get(f"{SUPABASE_URL}/rest/v1/pending_employees?select=*", headers=headers)
     pending = {}
-    for row in c.execute("SELECT * FROM pending_employees"):
-        pending[row[0]] = json.loads(row[1])
+    if response.status_code == 200:
+        for item in response.json():
+            pending[item['full_name']] = json.loads(item['data'])
     return pending
 
 def delete_pending(full_name):
-    c.execute("DELETE FROM pending_employees WHERE full_name = ?", (full_name,))
-    conn.commit()
+    requests.delete(f"{SUPABASE_URL}/rest/v1/pending_employees?full_name=eq.{full_name}", headers=headers)
 
 # Initialize session state
 if 'employees' not in st.session_state:
@@ -456,11 +457,6 @@ if st.session_state.user_role in ['admin', 'manager']:
                 st.success("Loaded!")
             else:
                 st.error("No save file.")
-            # Load pending if not in state
-            if os.path.exists(pending_file):
-                with open(pending_file, "r") as f:
-                    st.session_state.pending_employees = json.load(f)
-                st.write("Debug: Loaded pending from file in Load All", st.session_state.pending_employees)  # Debug
     with col3:
         if st.button("Finalize Week"):
             week_key = st.session_state.current_week_start
