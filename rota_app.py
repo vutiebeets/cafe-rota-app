@@ -3,7 +3,6 @@ import pandas as pd
 import json
 from datetime import datetime, timedelta
 import bcrypt  # For password hashing
-from supabase import create_client, Client  # For Supabase
 import random
 import string  # For generating random passwords
 
@@ -104,11 +103,6 @@ css = """
 """
 st.markdown(css, unsafe_allow_html=True)
 
-# Supabase connection
-supabase_url = "https://htnbizrnnryvsfummxfa.supabase.co"
-supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0bmJpenJubnJ5dnNmdW1teGZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI0MDUyNDIsImV4cCI6MjA2Nzk4MTI0Mn0.pc3t1b5rblQtHBLHmDG29IgtfXjwBwXTc-wVPCPVDjo"
-supabase: Client = create_client(supabase_url, supabase_key)
-
 # Dark mode toggle
 if 'dark_mode' not in st.session_state:
     st.session_state.dark_mode = False
@@ -165,6 +159,21 @@ if 'current_week_start' not in st.session_state:
     today = datetime.today()
     monday = today - timedelta(days=today.weekday())  # Assume week starts Monday
     st.session_state.current_week_start = monday.strftime('%Y-%m-%d')
+
+# Function to calculate hours and cost for the week (moved to top)
+def calculate_hours_cost(full_name):
+    total_hours = 0.0
+    for day in st.session_state.days:
+        sch = st.session_state.schedule[week_key].get(day, {}).get(full_name, {})
+        if 'start' in sch and sch['start'] and 'end' in sch and sch['end']:
+            start_time = datetime.strptime(sch['start'], '%H:%M')
+            end_time = datetime.strptime(sch['end'], '%H:%M')
+            shift_h = (end_time - start_time).total_seconds() / 3600
+            total_hours += max(0, shift_h - sch.get('break_minutes', 0) / 60)
+    wage = st.session_state.employees[full_name]['wage']
+    cost = total_hours * wage
+    overtime = total_hours > 48
+    return total_hours, cost, overtime
 
 # Basic login (for demo; not secure)
 if not st.session_state.logged_in:
@@ -319,21 +328,6 @@ if page == "Schedule" or page == "View Schedule":
         st.session_state.schedule[week_key] = {day: {emp: {'start': '', 'end': '', 'break_minutes': 0, 'locked': False} for emp in st.session_state.employees} for day in st.session_state.days}
     if week_key not in st.session_state.holidays:
         st.session_state.holidays[week_key] = {day: [] for day in st.session_state.days}
-    
-    # Function to calculate hours and cost for the week
-    def calculate_hours_cost(full_name):
-        total_hours = 0.0
-        for day in st.session_state.days:
-            sch = st.session_state.schedule[week_key].get(day, {}).get(full_name, {})
-            if 'start' in sch and sch['start'] and 'end' in sch and sch['end']:
-                start_time = datetime.strptime(sch['start'], '%H:%M')
-                end_time = datetime.strptime(sch['end'], '%H:%M')
-                shift_h = (end_time - start_time).total_seconds() / 3600
-                total_hours += max(0, shift_h - sch.get('break_minutes', 0) / 60)
-        wage = st.session_state.employees[full_name]['wage']
-        cost = total_hours * wage
-        overtime = total_hours > 48
-        return total_hours, cost, overtime
     
     for area in st.session_state.areas:
         st.subheader(area)
