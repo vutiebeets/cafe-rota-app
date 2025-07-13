@@ -4,6 +4,8 @@ import json
 from datetime import datetime, timedelta
 import bcrypt  # For password hashing
 from supabase import create_client, Client  # For Supabase
+import random
+import string  # For generating random passwords
 
 # Custom CSS for branding and mobile responsiveness
 css = """
@@ -141,9 +143,6 @@ if 'employees' not in st.session_state:
             'total_hours_worked': 0.0,
             'role': 'admin'  # New: role field
         }
-if 'pending_employees' not in st.session_state:
-    response = supabase.table("pending_employees").select("*").execute()
-    st.session_state.pending_employees = {item['full_name']: json.loads(item['data']) for item in response.data}
 if 'schedule' not in st.session_state:
     st.session_state.schedule = {}  # {week_start: {day: {emp: {...}}}}
 if 'holidays' not in st.session_state:
@@ -167,50 +166,6 @@ if 'current_week_start' not in st.session_state:
     monday = today - timedelta(days=today.weekday())  # Assume week starts Monday
     st.session_state.current_week_start = monday.strftime('%Y-%m-%d')
 
-# Sign Up Form (accessible without login)
-if not st.session_state.logged_in and st.sidebar.button("Sign Up as New Employee"):
-    st.title("New Employee Sign Up")
-    with st.form("new_employee"):
-        first_name = st.text_input("First Name")
-        surname = st.text_input("Surname")
-        dob = st.date_input("Date of Birth", format="DD/MM/YYYY", min_value=datetime.today() - timedelta(days=365*100), max_value=datetime.today() - timedelta(days=365*18))
-        start_date = st.date_input("Employment Start Date", format="DD/MM/YYYY")
-        email = st.text_input("Email")
-        password = st.text_input("Set Password", type="password")
-        confirm_pw = st.text_input("Confirm Password", type="password")
-        submit = st.form_submit_button("Submit for Approval")
-        
-        if submit:
-            if password != confirm_pw:
-                st.error("Passwords do not match.")
-            else:
-                full_name = f"{first_name} {surname}".strip()
-                if full_name not in st.session_state.employees and full_name not in st.session_state.pending_employees:
-                    hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-                    pending_data = {
-                        'first_name': first_name,
-                        'surname': surname,
-                        'date_of_birth': dob.strftime("%d/%m/%Y"),
-                        'start_date': start_date.strftime("%d/%m/%Y"),
-                        'email': email,
-                        'password': hashed_pw,
-                        'type': '',  # Admin to set
-                        'wage': 0.0,  # Admin to set
-                        'employment_type': '',  # Admin to set
-                        'holiday_entitlement_days': 0,
-                        'holiday_taken_days': 0,
-                        'accrued_holiday_hours': 0.0,
-                        'used_holiday_hours': 0.0,
-                        'total_hours_worked': 0.0,
-                        'role': 'employee'  # Default; admin can change to manager
-                    }
-                    supabase.table("pending_employees").insert({"full_name": full_name, "data": json.dumps(pending_data)}).execute()
-                    st.session_state.pending_employees[full_name] = pending_data
-                    st.success("Your sign-up has been submitted for approval!")
-                    st.rerun()
-                else:
-                    st.error("Name already exists.")
-
 # Basic login (for demo; not secure)
 if not st.session_state.logged_in:
     st.title("Login")
@@ -227,7 +182,7 @@ if not st.session_state.logged_in:
             else:
                 st.error("Incorrect password.")
         else:
-            st.error("User not found or pending approval.")
+            st.error("User not found.")
     st.stop()
 
 # Sidebar navigation
@@ -240,57 +195,25 @@ if st.session_state.logged_in:
         st.rerun()
 
 if st.session_state.user_role == 'admin':
-    page = st.sidebar.radio("Pages", ["Dashboard", "Approve Sign-Ups", "Employees", "Schedule", "Reports"])
+    page = st.sidebar.radio("Pages", ["Dashboard", "Employees", "Schedule", "Reports"])
 elif st.session_state.user_role == 'manager':
     page = st.sidebar.radio("Pages", ["Dashboard", "Employees", "Schedule", "Reports"])
 else:
-    page = st.sidebar.radio("Pages", ["Dashboard", "View Schedule", "Request Holiday"])
+    page = st.sidebar.radio("Pages", ["Dashboard", "View Schedule", "Request Holiday", "Change Password"])
 
 # New Dashboard Page
 if page == "Dashboard":
     st.title("Dashboard")
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Pending Approvals", len(st.session_state.pending_employees))
-    with col2:
         st.metric("Total Employees", len(st.session_state.employees))
-    with col3:
+    with col2:
         st.metric("Weekly Labor Cost", "£" + str(sum(calculate_hours_cost(emp)[1] for emp in st.session_state.employees)))
+    with col3:
+        st.metric("Overtime Alerts", sum(1 for emp in st.session_state.employees if calculate_hours_cost(emp)[2]))
     st.subheader("Upcoming Holidays")
     # Example: List holidays (expand as needed)
     st.write("No upcoming holidays.")  # Placeholder
-
-if page == "Approve Sign-Ups" and st.session_state.user_role == 'admin':
-    st.title("Approve New Employees")
-    response = supabase.table("pending_employees").select("*").execute()
-    st.session_state.pending_employees = {item['full_name']: json.loads(item['data']) for item in response.data}
-    if st.session_state.pending_employees:
-        for full_name, data in list(st.session_state.pending_employees.items()):
-            st.subheader(full_name)
-            st.write(f"DOB: {data['date_of_birth']}, Start: {data['start_date']}, Email: {data['email']}")
-            emp_type = st.selectbox("Type", ["FOH", "BOH"], key=f"type_{full_name}")
-            wage = st.number_input("Wage (£/hr)", min_value=0.0, key=f"wage_{full_name}")
-            employment_type = st.selectbox("Employment Type", ["full_time", "hourly"], key=f"emp_type_{full_name}")
-            role = st.selectbox("Role", ["employee", "manager"], key=f"role_{full_name}")
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("Approve", key=f"approve_{full_name}"):
-                    data['type'] = emp_type
-                    data['wage'] = wage
-                    data['employment_type'] = employment_type
-                    data['role'] = role
-                    data['holiday_entitlement_days'] = 28 if employment_type == 'full_time' else 0
-                    st.session_state.employees[full_name] = data
-                    supabase.table("pending_employees").delete().eq("full_name", full_name).execute()
-                    st.success(f"{full_name} approved!")
-                    st.rerun()
-            with col2:
-                if st.button("Reject", key=f"reject_{full_name}"):
-                    supabase.table("pending_employees").delete().eq("full_name", full_name).execute()
-                    st.success(f"{full_name} rejected.")
-                    st.rerun()
-    else:
-        st.info("No pending sign-ups.")
 
 if page == "Employees":
     if st.session_state.user_role in ['admin', 'manager']:
@@ -307,7 +230,6 @@ if page == "Employees":
             dob = st.date_input("Date of Birth", format="DD/MM/YYYY", min_value=datetime.today() - timedelta(days=365*100), max_value=datetime.today() - timedelta(days=365*18))
             start_date = st.date_input("Start Date", format="DD/MM/YYYY")
             email = st.text_input("Email")
-            password = st.text_input("Password", type="password")  # For manual add
             emp_type = st.selectbox("Type", ["FOH", "BOH"])
             wage = st.number_input("Wage (£/hr)", min_value=0.0)
             employment_type = st.selectbox("Employment Type", ["full_time", "hourly"])
@@ -317,7 +239,9 @@ if page == "Employees":
             if submit:
                 full_name = f"{first_name} {surname}".strip()
                 if full_name not in st.session_state.employees:
-                    hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode() if password else ''
+                    # Generate random initial password
+                    random_pw = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
+                    hashed_pw = bcrypt.hashpw(random_pw.encode(), bcrypt.gensalt()).decode()
                     st.session_state.employees[full_name] = {
                         'first_name': first_name,
                         'surname': surname,
@@ -339,7 +263,7 @@ if page == "Employees":
                     for week_key in st.session_state.schedule:
                         for day in st.session_state.days:
                             st.session_state.schedule[week_key][day][full_name] = {'start': '', 'end': '', 'break_minutes': 0, 'locked': False}
-                    st.success("Employee added!")
+                    st.success(f"Employee added! Initial password: {random_pw} (Share securely and instruct them to change it.)")
                     st.rerun()
                 else:
                     st.error("Duplicate employee.")
@@ -353,6 +277,22 @@ if page == "Employees":
                     d.pop('password', None)
             emp_df = pd.DataFrame.from_dict(emp_data, orient='index')
             st.dataframe(emp_df)
+
+# New Change Password Page
+if page == "Change Password" and st.session_state.logged_in:
+    st.title("Change Password")
+    current_pw = st.text_input("Current Password", type="password")
+    new_pw = st.text_input("New Password", type="password")
+    confirm_pw = st.text_input("Confirm New Password", type="password")
+    if st.button("Change Password"):
+        if new_pw != confirm_pw:
+            st.error("New passwords do not match.")
+        elif bcrypt.checkpw(current_pw.encode(), st.session_state.employees[st.session_state.current_user]['password'].encode()):
+            hashed_new_pw = bcrypt.hashpw(new_pw.encode(), bcrypt.gensalt()).decode()
+            st.session_state.employees[st.session_state.current_user]['password'] = hashed_new_pw
+            st.success("Password changed successfully!")
+        else:
+            st.error("Current password incorrect.")
 
 if page == "Schedule" or page == "View Schedule":
     view_only = page == "View Schedule" or st.session_state.user_role == 'employee'
@@ -507,7 +447,6 @@ if st.session_state.user_role in ['admin', 'manager']:
         if st.button("Save All"):
             data = {
                 "employees": st.session_state.employees,
-                "pending_employees": st.session_state.pending_employees,
                 "schedule": st.session_state.schedule,
                 "holidays": st.session_state.holidays
             }
@@ -520,7 +459,6 @@ if st.session_state.user_role in ['admin', 'manager']:
                 with open("rota_data.json", "r") as f:
                     data = json.load(f)
                 st.session_state.employees = data.get("employees", {})
-                st.session_state.pending_employees = data.get("pending_employees", {})
                 st.session_state.schedule = data.get("schedule", {})
                 st.session_state.holidays = data.get("holidays", {})
                 st.success("Loaded!")
@@ -535,16 +473,4 @@ if st.session_state.user_role in ['admin', 'manager']:
                     sch = st.session_state.schedule.get(week_key, {}).get(day, {}).get(full_name, {})
                     if 'start' in sch and sch['start']:
                         start = datetime.strptime(sch['start'], '%H:%M')
-                        end = datetime.strptime(sch['end'], '%H:%M')
-                        shift_h = (end - start).total_seconds() / 3600
-                        week_hours += max(0, shift_h - sch['break_minutes'] / 60)
-                data['total_hours_worked'] += week_hours
-                if data['employment_type'] == 'hourly':
-                    data['accrued_holiday_hours'] += week_hours * st.session_state.accrual_rate
-            st.success("Week finalized!")
-    with col4:
-        if st.button("Clear Schedule"):
-            week_key = st.session_state.current_week_start
-            st.session_state.schedule[week_key] = {day: {emp: {'start': '', 'end': '', 'break_minutes': 0, 'locked': False} for emp in st.session_state.employees} for day in st.session_state.days}
-            st.session_state.holidays[week_key] = {day: [] for day in st.session_state.days}
-            st.success("Schedule cleared!")
+                        end = datetime.strptime(sch['end'],
