@@ -142,8 +142,8 @@ if 'employees' not in st.session_state:
             'role': 'admin'  # New: role field
         }
 if 'pending_employees' not in st.session_state:
-    st.session_state.pending_employees = supabase.table("pending_employees").select("*").execute().data
-    st.session_state.pending_employees = {item['full_name']: json.loads(item['data']) for item in st.session_state.pending_employees}
+    response = supabase.table("pending_employees").select("*").execute()
+    st.session_state.pending_employees = {item['full_name']: json.loads(item['data']) for item in response.data}
 if 'schedule' not in st.session_state:
     st.session_state.schedule = {}  # {week_start: {day: {emp: {...}}}}
 if 'holidays' not in st.session_state:
