@@ -185,6 +185,13 @@ if not st.session_state.logged_in:
 
 # Sidebar navigation
 st.sidebar.title("Cafe Rota App")
+if st.session_state.logged_in:
+    if st.sidebar.button("Logout"):
+        st.session_state.logged_in = False
+        st.session_state.user_role = None
+        st.session_state.current_user = None
+        st.rerun()
+
 if st.session_state.user_role == 'admin':
     page = st.sidebar.radio("Pages", ["Approve Sign-Ups", "Employees", "Schedule", "Reports"])
 elif st.session_state.user_role == 'manager':
