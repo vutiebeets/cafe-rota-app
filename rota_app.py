@@ -473,4 +473,16 @@ if st.session_state.user_role in ['admin', 'manager']:
                     sch = st.session_state.schedule.get(week_key, {}).get(day, {}).get(full_name, {})
                     if 'start' in sch and sch['start']:
                         start = datetime.strptime(sch['start'], '%H:%M')
-                        end = datetime.strptime(sch['end'],
+                        end = datetime.strptime(sch['end'], '%H:%M')
+                        shift_h = (end - start).total_seconds() / 3600
+                        week_hours += max(0, shift_h - sch['break_minutes'] / 60)
+                data['total_hours_worked'] += week_hours
+                if data['employment_type'] == 'hourly':
+                    data['accrued_holiday_hours'] += week_hours * st.session_state.accrual_rate
+            st.success("Week finalized!")
+    with col4:
+        if st.button("Clear Schedule"):
+            week_key = st.session_state.current_week_start
+            st.session_state.schedule[week_key] = {day: {emp: {'start': '', 'end': '', 'break_minutes': 0, 'locked': False} for emp in st.session_state.employees} for day in st.session_state.days}
+            st.session_state.holidays[week_key] = {day: [] for day in st.session_state.days}
+            st.success("Schedule cleared!")
