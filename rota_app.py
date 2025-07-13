@@ -314,10 +314,6 @@ if page == "Schedule" or page == "View Schedule":
     if week_key not in st.session_state.holidays:
         st.session_state.holidays[week_key] = {day: [] for day in st.session_state.days}
     
-    if st.session_state.user_role == 'admin':
-        total_week_cost = sum(calculate_hours_cost(emp)[1] for emp in st.session_state.employees)
-        st.subheader(f"Total Week Cost: £{total_week_cost:.2f}")
-
     for area in st.session_state.areas:
         st.subheader(area)
         area_type = 'BOH' if 'BOH' in area else 'FOH'  # Fixed mapping
