@@ -160,24 +160,6 @@ if 'current_week_start' not in st.session_state:
     monday = today - timedelta(days=today.weekday())  # Assume week starts Monday
     st.session_state.current_week_start = monday.strftime('%Y-%m-%d')
 
-# Define week_key globally
-week_key = st.session_state.current_week_start
-
-# Function to calculate hours and cost for the week
-def calculate_hours_cost(full_name):
-    total_hours = 0.0
-    for day in st.session_state.days:
-        sch = st.session_state.schedule.get(week_key, {}).get(day, {}).get(full_name, {})
-        if 'start' in sch and sch['start']:
-            start = datetime.strptime(sch['start'], '%H:%M')
-            end = datetime.strptime(sch['end'], '%H:%M')
-            shift_h = (end - start).total_seconds() / 3600
-            total_hours += max(0, shift_h - sch['break_minutes'] / 60)
-    wage = st.session_state.employees[full_name]['wage']
-    cost = total_hours * wage
-    overtime = total_hours > 48
-    return total_hours, cost, overtime
-
 # Basic login (for demo; not secure)
 if not st.session_state.logged_in:
     st.title("Login")
@@ -334,7 +316,7 @@ if page == "Schedule" or page == "View Schedule":
     
     for area in st.session_state.areas:
         st.subheader(area)
-        area_type = 'BOH' if 'BOH' in area else 'FOH'  # Fixed mapping
+        area_type = 'BOH' if area == "Back of House" else 'FOH'
         area_emps = [name for name, d in st.session_state.employees.items() if d['type'] == area_type]
         if area_emps or not view_only:
             data = {" ": []}  # For initials/photo placeholder
