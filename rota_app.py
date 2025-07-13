@@ -49,8 +49,8 @@ css = """
 """
 st.markdown(css, unsafe_allow_html=True)
 
-SUPABASE_URL = "https://htnbizrnnryvsfummxfa.supabase.co"  # Updated with your URL
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0bmJpenJubnJ5dnNmdW1teGZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI0MDUyNDIsImV4cCI6MjA2Nzk4MTI0Mn0.pc3t1b5rblQtHBLHmDG29IgtfXjwBwXTc-wVPCPVDjo"  # Updated with your key
+SUPABASE_URL = "https://htnbizrnnryvsfummxfa.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0bmJpenJubnJ5dnNmdW1teGZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI0MDUyNDIsImV4cCI6MjA2Nzk4MTI0Mn0.pc3t1b5rblQtHBLHmDG29IgtfXjwBwXTc-wVPCPVDjo"
 headers = {
     "apikey": SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}",
