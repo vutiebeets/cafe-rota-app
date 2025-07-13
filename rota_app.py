@@ -2,10 +2,10 @@ import streamlit as st
 import pandas as pd
 import json
 from datetime import datetime, timedelta
+import requests  # For Supabase API
 import bcrypt  # For password hashing
-from supabase import create_client, Client  # For Supabase
 
-# Custom CSS for branding
+# Custom CSS for branding and mobile responsiveness
 css = """
 <style>
     /* Background color */
@@ -45,14 +45,102 @@ css = """
         background-color: #ffffff;
         color: #0a4d29;
     }
+    /* Enhanced colors for shifts: green for shifts, red for holidays, yellow for overtime */
+    .shift-cell {
+        background-color: #d4edda;  /* Light green for shifts */
+    }
+    .holiday-cell {
+        background-color: #f8d7da;  /* Light red for holidays */
+    }
+    .overtime-cell {
+        background-color: #fff3cd;  /* Light yellow for overtime */
+    }
+    /* Mobile responsiveness */
+    @media (max-width: 768px) {
+        .stDataFrame {
+            font-size: 12px;
+        }
+        .stButton > button {
+            width: 100%;
+        }
+        .stSubheader {
+            font-size: 18px;
+        }
+        .row-widget {
+            flex-direction: column !important;
+        }
+    }
+    /* Dark mode toggle */
+    [data-theme="dark"] .stApp {
+        background-color: #343a40;
+    }
+    [data-theme="dark"] body, [data-theme="dark"] p, [data-theme="dark"] div, [data-theme="dark"] span, [data-theme="dark"] label, [data-theme="dark"] input, [data-theme="dark"] select, [data-theme="dark"] textarea, [data-theme="dark"] button, [data-theme="dark"] h1, [data-theme="dark"] h2, [data-theme="dark"] h3, [data-theme="dark"] h4, [data-theme="dark"] h5, [data-theme="dark"] h6 {
+        color: #ffffff !important;
+    }
+    [data-theme="dark"] .stButton > button {
+        background-color: #495057;
+        color: #ffffff;
+        border: 1px solid #ffffff;
+    }
+    [data-theme="dark"] .stButton > button:hover {
+        background-color: #ffffff;
+        color: #495057;
+    }
+    [data-theme="dark"] .stDataFrame, [data-theme="dark"] .dataframe {
+        background-color: #495057;
+        color: #ffffff;
+    }
+    [data-theme="dark"] .stTextInput > div > div > input, [data-theme="dark"] .stSelectbox > div > div > select, [data-theme="dark"] .stNumberInput > div > div > input {
+        background-color: #495057;
+        color: #ffffff;
+    }
+    [data-theme="dark"] .stAlert {
+        background-color: #495057;
+        color: #ffffff;
+    }
 </style>
 """
 st.markdown(css, unsafe_allow_html=True)
 
-# Supabase connection
-supabase_url = "https://htnbizrnnryvsfummxfa.supabase.co"
-supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0bmJpenJubnJ5dnNmdW1teGZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI0MDUyNDIsImV4cCI6MjA2Nzk4MTI0Mn0.pc3t1b5rblQtHBLHmDG29IgtfXjwBwXTc-wVPCPVDjo"
-supabase: Client = create_client(supabase_url, supabase_key)
+SUPABASE_URL = "https://htnbizrnnryvsfummxfa.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0bmJpenJubnJ5dnNmdW1teGZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI0MDUyNDIsImV4cCI6MjA2Nzk4MTI0Mn0.pc3t1b5rblQtHBLHmDG29IgtfXjwBwXTc-wVPCPVDjo"
+headers = {
+    "apikey": SUPABASE_KEY,
+    "Authorization": f"Bearer {SUPABASE_KEY}",
+    "Content-Type": "application/json",
+    "Prefer": "return=minimal"
+}
+
+def save_pending(full_name, data):
+    response = requests.post(f"{SUPABASE_URL}/rest/v1/pending_employees", headers=headers, json={"full_name": full_name, "data": json.dumps(data)})
+    if response.status_code != 201:
+        st.error(f"Save failed: {response.text}")
+
+def load_pending():
+    response = requests.get(f"{SUPABASE_URL}/rest/v1/pending_employees?select=*", headers=headers)
+    pending = {}
+    if response.status_code == 200:
+        for item in response.json():
+            pending[item['full_name']] = json.loads(item['data'])
+    else:
+        st.error(f"Load failed: {response.text}")
+    return pending
+
+def delete_pending(full_name):
+    response = requests.delete(f"{SUPABASE_URL}/rest/v1/pending_employees?full_name=eq.{full_name}", headers=headers)
+    if response.status_code != 200:
+        st.error(f"Delete failed: {response.text}")
+
+# Dark mode toggle
+if 'dark_mode' not in st.session_state:
+    st.session_state.dark_mode = False
+
+if st.sidebar.checkbox("Dark Mode"):
+    st.session_state.dark_mode = True
+    st.markdown('<body data-theme="dark"></body>', unsafe_allow_html=True)
+else:
+    st.session_state.dark_mode = False
+    st.markdown('<body data-theme="light"></body>', unsafe_allow_html=True)
 
 # Initialize session state
 if 'employees' not in st.session_state:
@@ -78,8 +166,7 @@ if 'employees' not in st.session_state:
             'role': 'admin'  # New: role field
         }
 if 'pending_employees' not in st.session_state:
-    st.session_state.pending_employees = supabase.table("pending_employees").select("*").execute().data
-    st.session_state.pending_employees = {item['full_name']: json.loads(item['data']) for item in st.session_state.pending_employees}
+    st.session_state.pending_employees = load_pending()
 if 'schedule' not in st.session_state:
     st.session_state.schedule = {}  # {week_start: {day: {emp: {...}}}}
 if 'holidays' not in st.session_state:
@@ -140,8 +227,8 @@ if not st.session_state.logged_in and st.sidebar.button("Sign Up as New Employee
                         'total_hours_worked': 0.0,
                         'role': 'employee'  # Default; admin can change to manager
                     }
-                    supabase.table("pending_employees").insert({"full_name": full_name, "data": json.dumps(pending_data)}).execute()
                     st.session_state.pending_employees[full_name] = pending_data
+                    save_pending(full_name, pending_data)
                     st.success("Your sign-up has been submitted for approval!")
                     st.rerun()
                 else:
@@ -176,16 +263,29 @@ if st.session_state.logged_in:
         st.rerun()
 
 if st.session_state.user_role == 'admin':
-    page = st.sidebar.radio("Pages", ["Approve Sign-Ups", "Employees", "Schedule", "Reports"])
+    page = st.sidebar.radio("Pages", ["Dashboard", "Approve Sign-Ups", "Employees", "Schedule", "Reports"])
 elif st.session_state.user_role == 'manager':
-    page = st.sidebar.radio("Pages", ["Employees", "Schedule", "Reports"])
+    page = st.sidebar.radio("Pages", ["Dashboard", "Employees", "Schedule", "Reports"])
 else:
-    page = st.sidebar.radio("Pages", ["View Schedule", "Request Holiday"])
+    page = st.sidebar.radio("Pages", ["Dashboard", "View Schedule", "Request Holiday"])
+
+# New Dashboard Page
+if page == "Dashboard":
+    st.title("Dashboard")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Pending Approvals", len(st.session_state.pending_employees))
+    with col2:
+        st.metric("Total Employees", len(st.session_state.employees))
+    with col3:
+        st.metric("Weekly Labor Cost", "£" + str(sum(calculate_hours_cost(emp)[1] for emp in st.session_state.employees)))
+    st.subheader("Upcoming Holidays")
+    # Example: List holidays (expand as needed)
+    st.write("No upcoming holidays.")  # Placeholder
 
 if page == "Approve Sign-Ups" and st.session_state.user_role == 'admin':
     st.title("Approve New Employees")
-    response = supabase.table("pending_employees").select("*").execute()
-    st.session_state.pending_employees = {item['full_name']: json.loads(item['data']) for item in response.data}
+    st.session_state.pending_employees = load_pending()  # Reload from DB
     if st.session_state.pending_employees:
         for full_name, data in list(st.session_state.pending_employees.items()):
             st.subheader(full_name)
@@ -203,14 +303,19 @@ if page == "Approve Sign-Ups" and st.session_state.user_role == 'admin':
                     data['role'] = role
                     data['holiday_entitlement_days'] = 28 if employment_type == 'full_time' else 0
                     st.session_state.employees[full_name] = data
-                    supabase.table("pending_employees").delete().eq("full_name", full_name).execute()
+                    delete_pending(full_name)
+                    st.session_state.pending_employees = load_pending()  # Reload
+                    # Initialize schedule for new employee
+                    for week_key in st.session_state.schedule:
+                        for day in st.session_state.days:
+                            st.session_state.schedule[week_key][day][full_name] = {'start': '', 'end': '', 'break_minutes': 0, 'locked': False}
                     st.success(f"{full_name} approved!")
                     st.rerun()
             with col2:
                 if st.button("Reject", key=f"reject_{full_name}"):
-                    supabase.table("pending_employees").delete().eq("full_name", full_name).execute()
+                    delete_pending(full_name)
+                    st.session_state.pending_employees = load_pending()  # Reload
                     st.success(f"{full_name} rejected.")
-                    st.rerun()
     else:
         st.info("No pending sign-ups.")
 
@@ -218,6 +323,10 @@ if page == "Employees":
     if st.session_state.user_role in ['admin', 'manager']:
         st.title("Manage Employees")
         
+        # Add search/filter for employees
+        search = st.text_input("Search Employees")
+        filtered_employees = {k: v for k, v in st.session_state.employees.items() if search.lower() in k.lower()}
+
         # Add employee form (for admins/managers)
         with st.form("add_employee"):
             first_name = st.text_input("First Name")
@@ -263,8 +372,8 @@ if page == "Employees":
                     st.error("Duplicate employee.")
         
         # Display employees (hide sensitive info for managers)
-        if st.session_state.employees:
-            emp_data = {k: v.copy() for k, v in st.session_state.employees.items()}
+        if filtered_employees:
+            emp_data = {k: v.copy() for k, v in filtered_employees.items()}
             if st.session_state.user_role == 'manager':
                 for d in emp_data.values():
                     d.pop('wage', None)
@@ -306,11 +415,12 @@ if page == "Schedule" or page == "View Schedule":
             if 'start' in sch and sch['start'] and 'end' in sch and sch['end']:
                 start_time = datetime.strptime(sch['start'], '%H:%M')
                 end_time = datetime.strptime(sch['end'], '%H:%M')
-                shift_h = (end_time - start_time).total_seconds() / 3600
+                shift_h = (end - start).total_seconds() / 3600
                 total_hours += max(0, shift_h - sch.get('break_minutes', 0) / 60)
         wage = st.session_state.employees[full_name]['wage']
         cost = total_hours * wage
-        return total_hours, cost
+        overtime = total_hours > 48
+        return total_hours, cost, overtime
     
     for area in st.session_state.areas:
         st.subheader(area)
@@ -322,8 +432,8 @@ if page == "Schedule" or page == "View Schedule":
                 data[day] = []
             for emp in area_emps:
                 initials = ''.join(word[0].upper() for word in emp.split())
-                hours, cost = calculate_hours_cost(emp)
-                data[" "].append(f"{initials}\n{hours:.0f}h £{cost:.2f}")
+                hours, cost, overtime = calculate_hours_cost(emp)
+                data[" "].append(f"{initials}\n{hours:.0f}h £{cost:.2f}" + ("\nOvertime" if overtime else ""))
                 for day in st.session_state.days:
                     sch = st.session_state.schedule[week_key].get(day, {}).get(emp, {})
                     cell = f"{sch.get('start', '')}-{sch.get('end', '')} ({sch.get('break_minutes', 0)}m)" if sch.get('start') else '--'
