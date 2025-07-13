@@ -334,7 +334,7 @@ if page == "Schedule" or page == "View Schedule":
     
     for area in st.session_state.areas:
         st.subheader(area)
-        area_type = 'BOH' if 'BOH' in area else 'FOH'  # Fixed mapping
+        area_type = 'BOH' if area == "Back of House" else 'FOH'
         area_emps = [name for name, d in st.session_state.employees.items() if d['type'] == area_type]
         if area_emps or not view_only:
             data = {" ": []}  # For initials/photo placeholder
